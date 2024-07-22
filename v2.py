@@ -92,15 +92,27 @@ class BigramLanguageModel(nn.Module):
         # each token directly reads off the logits for the next token from a lookup table
         # The table is size (vocab_size, n_embed)
         self.token_embedding_table = nn.Embedding(vocab_size, n_embed)
+        # it is common to not only encode the "identities" of the token, but also the position
+        self.position_embedding_table = nn.Embedding(block_size, n_embed)
         # linear layer to convert embeddings into logits, i.e. likelihoods of each character in the vocab to be the next character
         self.lm_head = nn.Linear(n_embed, vocab_size) # lm -> language model
 
     def forward(self, idx, targets=None):
+        B, T = idx.shape
         # idx and targets ar eboth (B, T) tensor of integers
         token_embeddings = self.token_embedding_table(
             idx
         )  # (B,T,C) C refers to channel, n_embed in this case
-        logits = self.lm_head(token_embeddings) # (B, T, vocab_size)
+
+        # torch.arange returns a sequence of integers, i.e. indexes, from 0 to T-1
+        position_embeddings = self.position_embedding_table(torch.arange(T, device=device)) # (T, C)
+
+        # Combine token embeddings and position embeddings
+        # This doesn't add much info for now since our model does not consider
+        # history other than the last token, but it will be relevant
+        # when we move forward and talk about attention
+        x = token_embeddings + position_embeddings # (B, T, C)
+        logits = self.lm_head(x) # (B, T, vocab_size)
 
         if targets is None:
             loss = None
