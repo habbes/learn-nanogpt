@@ -9,6 +9,7 @@ max_iters = 3000
 eval_interval = 300
 learning_rate = 1e-2
 device = "cuda" if torch.cuda.is_available() else "cpu"
+print(f"Using device: {device}")
 eval_iters = 200
 # --------------
 
@@ -61,14 +62,22 @@ def get_batch(split):
 @torch.no_grad()
 def estimate_loss():
     out = {}
+    # Set model to evaluation mode
+    # For the simple bigram model, it doesn't make a difference.
+    # But some layers like Dropout behave differently in train and eval mode.
+    # So it's good practice to be explicit about which mode the model is in
     model.eval()
     for split in ["train", "val"]:
+        # compute losse of a number of batches
         losses = torch.zeros(eval_iters)
         for k in range(eval_iters):
             X, Y = get_batch(split)
             logits, loss = model(X, Y)
             losses[k] = loss.item()
+        # Get overage loss
         out[split] = losses.mean()
+    
+    # Set model to training mode
     model.train()
     return out
 
@@ -140,6 +149,8 @@ class BigramLanguageModel(nn.Module):
         return idx
 
 model = BigramLanguageModel(vocab_size)
+# Move the model (i.e. its parameters) to the device
+m = model.to(device)
 
 # create PyTorch optimizer
 optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
@@ -147,6 +158,8 @@ optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
 for iter in range(max_iters):
     # every once in a while evaluate the loss on trian and val sets
     if iter % eval_interval == 0:
+        # Instead of printing loss for every batch (which could be noisy)
+        # estimate loss over multiple batches
         losses = estimate_loss()
         print(f"step {iter}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}")
     
@@ -161,4 +174,4 @@ for iter in range(max_iters):
 
 # generate from the model
 context = torch.zeros((1, 1), dtype=torch.long, device=device)
-print(decode(model.generate(context, max_new_tokens=500)[0].tolist()))
+print(decode(m.generate(context, max_new_tokens=500)[0].tolist()))
