@@ -84,6 +84,43 @@ def estimate_loss():
     model.train()
     return out
 
+class Head(nn.Module):
+    """one head of self-attention"""
+
+    def __init__(self, head_size):
+        super().__init__()
+        # we create key, query, and value linear layers to compute
+        # the key, query and value vectors for each token in the input sequence
+        self.key = nn.Linear(n_embed, head_size, bias=False)
+        self.query = nn.Linear(n_embed, head_size, bias=False)
+        self.value = nn.Linear(n_embed, head_size, bias=False)
+
+        # tril is not a parameter of the module, we created it using the register_buffer
+        # method so that it won't be updated by the optmizer
+        # the tril is a lower triangular matrix of ones
+        # used to mask away the future tokens in the self-attention mechanism
+        self.register_buffer('tril', torch.tril(torch.ones(block_size, block_size)))
+    
+    def forward(self, x):
+        B, T, C = x.shape
+        # apply the key, query layers to the input
+        k = self.key(x) # (B, T, head_size)
+        q = self.query(x) # (B, T, head_size)
+
+        # compute attention scores ('affinities') between each pair of tokens
+        # the attention scores are computed as the dot product between the query and key vectors
+        # the 1/sqrt(C) scaling factor is used to prevent the dot products from getting too large or too small
+        # the keeps the variance around 1, making them suitable for the softmax function
+        wei = q @ k.transpose(-2, -1) * C ** (-0.5) # (B, T, head_size) @ (B, head_size, T) = (B, T, T)
+        # mask away the future tokens
+        wei = wei.masked_fill(self.tril[:T, :T] == 0, float('-inf')) # (B, T, T)
+        wei = F.softmax(wei, dim=-1) # (B, T, T)
+
+        # apply the attention scores to the value vectors to get the weighted sum of values
+        v = self.value(x) # (B, T, head_size)
+        out = wei @ v # (B, T, T) @ (B, T, head_size) = (B, T, head_size)
+        return out
+
 
 # super simple bigram model
 class BigramLanguageModel(nn.Module):
