@@ -127,11 +127,14 @@ class MultiHeadAttention(nn.Module):
     def __init__(self, num_heads, head_size):
         super().__init__()
         self.heads = nn.ModuleList([SelfAttentionHead(head_size) for _ in range(num_heads)])
+        self.proj = nn.Linear(n_embed, n_embed) # Add projection layer that will go back into the residual pathway. Why?
 
     def forward(self, x):
         # apply each head to the input in parallel
         # concatenate them over the channel dimension
-        return torch.cat([h(x) for h in self.heads], dim=-1) # (B, T, head_size * num_heads)
+        out = torch.cat([h(x) for h in self.heads], dim=-1) # (B, T, head_size * num_heads)
+        out = self.proj(out)
+        return out
     
 
 class FeedForward(nn.Module):
@@ -140,8 +143,9 @@ class FeedForward(nn.Module):
     def __init__(self, n_embed):
         super().__init__()
         self.net = nn.Sequential(
-            nn.Linear(n_embed, n_embed),
+            nn.Linear(n_embed, 4 * n_embed), # in the paper, the feedfoward layer is 4 times the size of the embedding dimension
             nn.ReLU(),
+            nn.Linear(4 * n_embed, n_embed) # add a projection layer that will go back into the residual pathway. Why?
         )
 
     def forward(self, x):
@@ -165,8 +169,17 @@ class Block(nn.Module):
         self.ffwd = FeedForward(n_embed)
     
     def forward(self, x):
-        x = self.sa(x)
-        x = self.ffwd(x)
+        # Since we're now adding multiple blocks into the overal model,
+        # the network is getting deeper and harder to optimize.
+        # One trick to help with optimization of deeper networks is to use residual connections,
+        # where we add the input to the output of the block before applying the non-linearity.
+        # i.e. the input is moved to the next step, but is also "forked" separately into some
+        # computation that is added back to the input before the next step.
+        # See "Deep Residual Learnin for Image Recognition, 2015": https://arxiv.org/pdf/1512.03385
+        # And "Understanding ResNet architecture": https://medium.com/@ibtedaazeem/understanding-resnet-architecture-a-deep-dive-into-residual-neural-network-2c792e6537a9
+
+        x = x + self.sa(x)
+        x = x + self.ffwd(x)
         return x
 
 # super simple bigram model
