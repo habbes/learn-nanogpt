@@ -132,6 +132,20 @@ class MultiHeadAttention(nn.Module):
         # apply each head to the input in parallel
         # concatenate them over the channel dimension
         return torch.cat([h(x) for h in self.heads], dim=-1) # (B, T, head_size * num_heads)
+    
+
+class FeedForward(nn.Module):
+    """A simple linear layer followed by a non-linearity"""
+
+    def __init__(self, n_embed):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(n_embed, n_embed),
+            nn.ReLU(),
+        )
+
+    def forward(self, x):
+        return self.net(x)
 
 # super simple bigram model
 class BigramLanguageModel(nn.Module):
@@ -147,6 +161,9 @@ class BigramLanguageModel(nn.Module):
         # this improved the accuracy of the model
         # it helps to have multiple heads to learn different aspects of the data
         self.sa_heads = MultiHeadAttention(4, n_embed // 4) # 4 heads of 8-dimensional self-attention
+        # add a simple feedforward layer to the model to give the nodes to process what they've learned
+        # from each other before computing the logits
+        self.ffwd = FeedForward(n_embed)
         # linear layer to convert embeddings into logits, i.e. likelihoods of each character in the vocab to be the next character
         self.lm_head = nn.Linear(n_embed, vocab_size) # lm -> language model
 
@@ -168,6 +185,11 @@ class BigramLanguageModel(nn.Module):
         x = token_embeddings + position_embeddings # (B, T, C)
         # feed the embeddings through the self-attention head
         x = self.sa_heads(x) # (B, T, C)
+        # the feedforward layer processes the output of the self-attention head
+        # on a token-by-token basis. All the tokens do this independently.
+        # The self-attention is the communication to gather the data, then now the tokens have to "think"
+        # about that data individually.
+        x = self.ffwd(x) # (B, T, C)
         logits = self.lm_head(x) # (B, T, vocab_size)
 
         if targets is None:
