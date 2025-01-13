@@ -7,9 +7,9 @@ from torch.nn import functional as F
 # hyperparameters
 batch_size = 32  # How many independent sequences will we process in parallel?
 block_size = 8  # what is the maximum content length for predictions?
-max_iters = 3000
+max_iters = 5000
 eval_interval = 300
-learning_rate = 1e-2
+learning_rate = 1e-3 # user lower learning rate cause the self-attention doesn't tolerate very high learning rates
 device = "cuda" if torch.cuda.is_available() else "cpu"
 print(f"Using device: {device}")
 eval_iters = 200
@@ -84,7 +84,7 @@ def estimate_loss():
     model.train()
     return out
 
-class Head(nn.Module):
+class SelfAttentionHead(nn.Module):
     """one head of self-attention"""
 
     def __init__(self, head_size):
@@ -131,6 +131,8 @@ class BigramLanguageModel(nn.Module):
         # it is common to not only encode the "identities" of the token, but also the position
         # each position will get its own embedding vector
         self.position_embedding_table = nn.Embedding(block_size, n_embed)
+        # self-attention head module
+        self.sa_head = SelfAttentionHead(n_embed)
         # linear layer to convert embeddings into logits, i.e. likelihoods of each character in the vocab to be the next character
         self.lm_head = nn.Linear(n_embed, vocab_size) # lm -> language model
 
@@ -150,6 +152,8 @@ class BigramLanguageModel(nn.Module):
         # history other than the last token, but it will be relevant
         # when we move forward and talk about attention
         x = token_embeddings + position_embeddings # (B, T, C)
+        # feed the embeddings through the self-attention head
+        x = self.sa_head(x) # (B, T, C)
         logits = self.lm_head(x) # (B, T, vocab_size)
 
         if targets is None:
@@ -179,7 +183,10 @@ class BigramLanguageModel(nn.Module):
             # We use the model instance as a function to compute the output instead of calling self.forward(idx) directly. This is the recommended way according to the docs.
             # logits is a (B, T, C) array that maps each index in the current context to a vector of logits
 
-            logits, loss = self(idx)
+            # crop idx to the last block_size tokens
+            idx_cond = idx[:, -block_size:]
+
+            logits, loss = self(idx_cond)
             # focus only on the last time step
             logits = logits[
                 :, -1, :
