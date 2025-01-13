@@ -55,7 +55,7 @@ We can represent the input block using the tensor:
 x = [18, 47, 56, 57, 58, 1, 15, 47]
 ```
 
-And the output block using the tensor:
+And the corresponding target outputs using the tensor:
 
 ```python
 y = [47, 56, 57, 58, 1, 15, 47, 58]
@@ -74,4 +74,103 @@ for t in range(block_size):
   context = x[:t + 1]
   target = y[t]
   print(f"when input is {context} the target: {target}")
+```
+
+## Batch processing
+
+Instead of training one block at a time, we traing a batch of blocks at the same time to take advantage of the GPU's parallelism.
+A batch contain a set of sequences that will be processed in parallel. Blocks in the batch are independent from each other, i.e. they don't "talk" to each other.
+
+In this example, we'll use a batch size of 4.
+
+Each batch contains a stack of input tensors and a corresponding stack of output tensors.
+
+Input tensor in the batch:
+
+```python
+xb = 
+tensor([[24, 43, 58,  5, 57,  1, 46, 43],
+        [44, 53, 56,  1, 58, 46, 39, 58],
+        [52, 58,  1, 58, 46, 39, 58,  1],
+        [25, 17, 27, 10,  0, 21,  1, 54]])
+```
+
+Output tensor in the batch:
+
+```python
+yb =
+tensor([[43, 58,  5, 57,  1, 46, 43, 39],
+        [53, 56,  1, 58, 46, 39, 58,  1],
+        [58,  1, 58, 46, 39, 58,  1, 46],
+        [17, 27, 10,  0, 21,  1, 54, 39]])
+```
+
+Each row in the input batch tensor has a corresponding target row in the output batch.
+
+Here's sample code that demonstrates how a batch can be generated:
+
+```python
+def get_batch(data):
+  # generate a small batch of data inputs x and target y
+  # generates a batch_size-sized sequence of random indexes (index ranginge from 0 to N - block_size)
+  # Each index is an offset in the data to the start of a batch of size block_size.
+  # So the last possible index would be N - block_size - 1 (the -1 so that we can have on item after the context block as expected output)
+  ix = torch.randint(len(data) - block_size, (batch_size, ))
+  # The generated indices allow us to select a batch of random training blocks from the dataset
+  # create a batch of training context blocks
+  # torch.stack creates rows of data where each row corresponds to one of the input lists
+  x = torch.stack([data[i:i + block_size] for i in ix])
+  # create a batch of training predictions
+  y = torch.stack([data[i + 1: i + block_size + 1] for i in ix])
+  return x, y
+
+# get a random batch from training data
+xb, yb = get_batch(training_data)
+```
+
+And here's a loop that demonstrates how the batch would be interpreted:
+
+```python
+for b in range(batch_size): # batch dimension
+  for t in range(block_size): #time dimension
+    context = xb[b, :t + 1]
+    target = yb[b, t]
+    print(f"when input context is {context.tolist()} the target is: { target}")
+```
+
+The output would look like
+
+```text
+when input context is [24] the target is: 43
+when input context is [24, 43] the target is: 58
+when input context is [24, 43, 58] the target is: 5
+when input context is [24, 43, 58, 5] the target is: 57
+when input context is [24, 43, 58, 5, 57] the target is: 1
+when input context is [24, 43, 58, 5, 57, 1] the target is: 46
+when input context is [24, 43, 58, 5, 57, 1, 46] the target is: 43
+when input context is [24, 43, 58, 5, 57, 1, 46, 43] the target is: 39
+when input context is [44] the target is: 53
+when input context is [44, 53] the target is: 56
+when input context is [44, 53, 56] the target is: 1
+when input context is [44, 53, 56, 1] the target is: 58
+when input context is [44, 53, 56, 1, 58] the target is: 46
+when input context is [44, 53, 56, 1, 58, 46] the target is: 39
+when input context is [44, 53, 56, 1, 58, 46, 39] the target is: 58
+when input context is [44, 53, 56, 1, 58, 46, 39, 58] the target is: 1
+when input context is [52] the target is: 58
+when input context is [52, 58] the target is: 1
+when input context is [52, 58, 1] the target is: 58
+when input context is [52, 58, 1, 58] the target is: 46
+when input context is [52, 58, 1, 58, 46] the target is: 39
+when input context is [52, 58, 1, 58, 46, 39] the target is: 58
+when input context is [52, 58, 1, 58, 46, 39, 58] the target is: 1
+when input context is [52, 58, 1, 58, 46, 39, 58, 1] the target is: 46
+when input context is [25] the target is: 17
+when input context is [25, 17] the target is: 27
+when input context is [25, 17, 27] the target is: 10
+when input context is [25, 17, 27, 10] the target is: 0
+when input context is [25, 17, 27, 10, 0] the target is: 21
+when input context is [25, 17, 27, 10, 0, 21] the target is: 1
+when input context is [25, 17, 27, 10, 0, 21, 1] the target is: 54
+when input context is [25, 17, 27, 10, 0, 21, 1, 54] the target is: 39
 ```
