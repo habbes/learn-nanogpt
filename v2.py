@@ -89,10 +89,10 @@ def estimate_loss():
 class BigramLanguageModel(nn.Module):
     def __init__(self):
         super().__init__()
-        # each token directly reads off the logits for the next token from a lookup table
         # The table is size (vocab_size, n_embed)
         self.token_embedding_table = nn.Embedding(vocab_size, n_embed)
         # it is common to not only encode the "identities" of the token, but also the position
+        # each position will get its own embedding vector
         self.position_embedding_table = nn.Embedding(block_size, n_embed)
         # linear layer to convert embeddings into logits, i.e. likelihoods of each character in the vocab to be the next character
         self.lm_head = nn.Linear(n_embed, vocab_size) # lm -> language model
@@ -108,6 +108,7 @@ class BigramLanguageModel(nn.Module):
         position_embeddings = self.position_embedding_table(torch.arange(T, device=device)) # (T, C)
 
         # Combine token embeddings and position embeddings
+        # X holds not only the token identities, but also the positions at which these tokens occur
         # This doesn't add much info for now since our model does not consider
         # history other than the last token, but it will be relevant
         # when we move forward and talk about attention
