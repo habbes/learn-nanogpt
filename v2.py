@@ -120,7 +120,18 @@ class SelfAttentionHead(nn.Module):
         v = self.value(x) # (B, T, head_size)
         out = wei @ v # (B, T, T) @ (B, T, head_size) = (B, T, head_size)
         return out
+    
+class MultiHeadAttention(nn.Module):
+    """multiple heads of self-attention in parallel"""
 
+    def __init__(self, num_heads, head_size):
+        super().__init__()
+        self.heads = nn.ModuleList([SelfAttentionHead(head_size) for _ in range(num_heads)])
+
+    def forward(self, x):
+        # apply each head to the input in parallel
+        # concatenate them over the channel dimension
+        return torch.cat([h(x) for h in self.heads], dim=-1) # (B, T, head_size * num_heads)
 
 # super simple bigram model
 class BigramLanguageModel(nn.Module):
@@ -131,8 +142,11 @@ class BigramLanguageModel(nn.Module):
         # it is common to not only encode the "identities" of the token, but also the position
         # each position will get its own embedding vector
         self.position_embedding_table = nn.Embedding(block_size, n_embed)
-        # self-attention head module
-        self.sa_head = SelfAttentionHead(n_embed)
+        # self-attention head modules
+        # instead of one large self-attention head, we use multiple smaller heads in parallel
+        # this improved the accuracy of the model
+        # it helps to have multiple heads to learn different aspects of the data
+        self.sa_heads = MultiHeadAttention(4, n_embed // 4) # 4 heads of 8-dimensional self-attention
         # linear layer to convert embeddings into logits, i.e. likelihoods of each character in the vocab to be the next character
         self.lm_head = nn.Linear(n_embed, vocab_size) # lm -> language model
 
@@ -153,7 +167,7 @@ class BigramLanguageModel(nn.Module):
         # when we move forward and talk about attention
         x = token_embeddings + position_embeddings # (B, T, C)
         # feed the embeddings through the self-attention head
-        x = self.sa_head(x) # (B, T, C)
+        x = self.sa_heads(x) # (B, T, C)
         logits = self.lm_head(x) # (B, T, vocab_size)
 
         if targets is None:
