@@ -28,9 +28,12 @@ a maximum length, which we'll call the block size or **context length**.
 
 Furthermore, each of block of tokens provides may training examples. Each subset `block[:t]` is training sample that predicts the token `block[t]`.
 
-For example, let the following sequence of tokens be a chunk from the training data:
+In this example we use a block size of 8.
 
-```
+For example, let the following sequence of tokens be a chunk from the training data. It contains 9 elements instead of 8 because the 9th element
+is the target output of the block that contains all te first 8 items.
+
+```python
 [18, 47, 56, 57, 58, 1, 15, 47, 58]
 ```
 
@@ -45,3 +48,30 @@ We can generate the following training examples:
 |`[18, 47, 56, 57, 58, 1]` | `15` |
 |`[18, 47, 56, 57, 58, 1, 15]` | `47` |
 |`[18, 47, 56, 57, 58, 1, 15, 47]` | `58` |
+
+We can represent the input block using the tensor:
+
+```python
+x = [18, 47, 56, 57, 58, 1, 15, 47]
+```
+
+And the output block using the tensor:
+
+```python
+y = [47, 56, 57, 58, 1, 15, 47, 58]
+```
+
+Notice that `y` is the block shifted one item to the right. At each index `t`, the subsequence of all elements in `x` up to `t` (inclusive) maps to the
+`y` element at `t`, i.e: for each t in range `block_size`, `x[:t + 1]` maps to the target output `y[t]`.
+
+Or more explicitly:
+
+```python
+# Let's the concept in the previous block into code
+x = train_data[:block_size]
+y = train_data[1:block_size + 1]
+for t in range(block_size):
+  context = x[:t + 1]
+  target = y[t]
+  print(f"when input is {context} the target: {target}")
+```
