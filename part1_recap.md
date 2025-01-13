@@ -174,3 +174,46 @@ when input context is [25, 17, 27, 10, 0, 21] the target is: 1
 when input context is [25, 17, 27, 10, 0, 21, 1] the target is: 54
 when input context is [25, 17, 27, 10, 0, 21, 1, 54] the target is: 39
 ```
+
+## Simplest neural network for language models: BiGram language model
+
+A bigram model predicts the next token solely based on the current token, it doesn't
+take the history or sequence of previous tokens into account.
+
+Our Bigram model is going to simple: Store a lookup table that maps each token in the vocabulary to a vector of scores or likelihoods for the next tokens and update these scores during training.
+
+Let's call this table `token_embedding_table`. Let `C` be the vocabulary size.
+
+The embedding table will be a C x C table. Each row of the table corresponds to the embedding vector for the token
+at that index in the vocabulary.
+
+i.e. `token_embedding_table[i, j]` returns the likelihood that the token corresponding to `vocab[j]` will follow the token at `vocab[i]` in the text.
+
+In this simple model, these scores are actually unnormalized logits, like one would get from the cross_entropy loss function.
+We initialize this table using the [`nn.Embedding`](https://pytorch.org/docs/stable/generated/torch.nn.Embedding.html).
+
+During the forward pass of the neural network, we take the logits corresponding to the input batch, i.e. for each batch, for each block, for each token, get the embedding vector of logits corresponding to that token.
+The result is a (B, T, C) matrix where B = batch size, T = block size, C = vocab size.
+
+We'll use the [`F.cross_entropy`](https://pytorch.org/docs/stable/generated/torch.nn.functional.cross_entropy.html#torch.nn.functional.cross_entropy) to compute the loss between the logits (which represents the predicted scores) and the actual output classes.
+The output classes here correspond to the actual "next tokens" as retrieved from the target tensor.
+
+Remember from the previous section that the target tensor is a B x T matrix where B is the batch size and T is the block size. Each token in `Y[b, t]` is the target output of the input sub-block `X[b, :t + 1]`. However, since this is a bigram model, that only considers the current token when predicting the next token, the input for each target `Y[b, t]` is actual `X[b, t]` rather than the sub-block `X[b, :t + 1]`.
+
+Also remember, that tokens are actually indices already. So we can use them directly into the `cross_entropy` function.
+
+The `cross_entropy` function expects a tensor `(N, C)` where `M` is the size of the minibatch. To be compatible with this format, we have to reshape our `(B, T, C)` tensor into `(B * T, C)` where the blocks are flattened. So each row of the input maps to the logits vector of the corresponding token. We do the same reshaping of the target tensor (from `(B , T)` to `(B * T)`) into a vector where each item is the target output token corresponding to the input token at that index.
+
+The `cross_entropy` returns the [cross-entropy loss](https://pytorch.org/docs/stable/generated/torch.nn.CrossEntropyLoss.html#torch.nn.CrossEntropyLoss) between the input and target.
+
+The forward pass returns both the logits and the loss.
+
+In order to generated predicted tokens from an input batch:
+
+- we run the forward pass of the model to get the logits (scores) corresponding to the input batch.
+- Then we take embedding vectors corresponding to the last token/column in each block of the batch (since this is a bigram model)
+- use the [`softmax`](https://pytorch.org/docs/stable/generated/torch.nn.functional.softmax.html) function to normalize the logits into probabilities
+- use a sampling function, in this case [`multinomial`](https://pytorch.org/docs/stable/generated/torch.multinomial.html#torch-multinomial) to select a new token based on the computed probabilities
+- append the predicted tokens to their corresponding blocks (one per batch item)
+- repeat this process for as many tokens you want to generate (this ends up using generated tokens to predict more tokens)
+
