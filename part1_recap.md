@@ -217,3 +217,147 @@ In order to generated predicted tokens from an input batch:
 - append the predicted tokens to their corresponding blocks (one per batch item)
 - repeat this process for as many tokens you want to generate (this ends up using generated tokens to predict more tokens)
 
+### Implement of `BigramLanguageModel`
+
+```python
+import torch
+import torch.nn as nn
+from torch.nn import functional as F
+torch.manual_seed(1337)
+
+class BigramLanguageModel(nn.Module):
+  def __init__(self, vocab_size):
+    super().__init__()
+    # each token directly reads off the logits for the next token from a lookup table
+    # this is a lookup table that has vocab_size entries/rows and each
+    # entry is a vector of size vocab_size
+    # It's going to store predicted scores/likelihoods for the next character in the sequence
+    # The lookup Embedding table is initialized with som random values, not with 0s
+    self.token_embedding_table = nn.Embedding(vocab_size, vocab_size)
+
+  def forward(self, idx, targets=None):
+    # idx and targets are both (B,T) tensor of integers (batch of context blocks and corresponding batch of targets)
+    # remember each encoded token in the input data as index into the vocab table, and therefore an index into
+    # the embedding table as well
+    # For each input integer in the (B,T) input batch, find its corresponding vector from the embedding table
+    # So for row in B and col in T, we'll have a vector of size vocab_size (C)
+    # So for all the input tokens, the lookup will return a tensor of size (B, T, C) where each input token is mapped to its embedding vector
+    # The embedding vector for a given character represents the score/likelihood of possible next character given the current character
+    logits = self.token_embedding_table(idx) # (B,T,C) C refers to channel, vocab size in this case
+
+    if targets is None:
+      loss = None;
+    else:
+      # We use negative loss-likelihood or cross-entropy to compute the loss.
+      # The cross_entropy function in pytorch expects the channels to be the second
+      # dimension, so we need to reshape our data
+      B, T, C = logits.shape
+      # The B * T batches are linearized into a single vector where each element is an input token
+      logits = logits.view(B * T, C)
+      targets = targets.view(B * T)
+      loss = F.cross_entropy(logits, targets)
+
+    return logits, loss
+
+  def generate(self, idx, max_new_tokens):
+    # generates the specified number of new tokens for each batch row
+    # and append them to the initial tokens
+    # idx is (B, T) array of indices in the current context
+
+    # For the simple bigram model, we only use the last token to predict the next, so this
+    # method is an overkill since it computes the logits for all the time steps. But it's written
+    # to be generalizable and reusable for models with longer context windows
+    for _ in range(max_new_tokens):
+      # get the predictions
+      # We use the model instance as a function to compute the output instead of calling self.forward(idx) directly. This is the recommended way according to the docs.
+      # logits is a (B, T, C) array that maps each index in the current context to a vector of logits
+
+      logits, loss = self(idx)
+      # focus only on the last time step
+      logits = logits[:, -1, :] # becomes (B, C), i.e, in each row of the batch, take only the last col
+      # apply softmax to get probabilities along the C dimension (i.e. the logits), such that for each embedding vector, its values are scaled to [0, 1] and sum up to 1
+      probs = F.softmax(logits, dim=-1) # (B, C)
+      # sample from the distribution
+      # for each row in the batch, select the next character index based on the probabilities
+      # TODO: Why multinomial distribution?
+      idx_next = torch.multinomial(probs, num_samples=1) # (B, 1)
+      # append sample index to the running sequence so it will be used in the prediction of the next token
+      idx = torch.cat((idx, idx_next), dim=1) # (B, T + 1)
+
+    return idx
+```
+
+Here's how you'd use it:
+
+```python
+m = BigramLanguageModel(vocab_size)
+logits, loss = m(xb, yb)
+
+print(
+    decode(
+      m.generate(
+          idx = torch.zeros((1, 1), dtype=torch.long),
+          max_new_tokens=100)[0].tolist() # returns a 1 * 100 array, get the first (and only) row
+    ))
+```
+
+At first the loss is relatively large and the generated output looks atrocious:
+
+```text
+Sr?qP-QWktXoL&jLDJgOLVz'RIoDqHdhsV&vLLxatjscMpwLERSPyao.qfzs$Ys$zF-w,;eEkzxjgCKFChs!iWW.ObzDnxA Ms$3
+```
+
+Looks nothing like input text so far.
+
+But this should improve with some training.
+
+### Training the bigram model
+
+We use the `AdamW` optimizer for the training (todo: Why this optimizer?)
+
+```python
+# m.parameters() in this case are the logits in the model's embedding table
+optimizer = torch.optim.AdamW(m.parameters(), lr=1e-3) # learning rates are usually smaller (~3e-4), but for such a small model we can get a way with a larger one
+
+batch_size = 32
+
+# Run 10000 epochs of the training process. We can run this cell multiple times
+# to continue training until convergence
+for steps in range(10000):
+  # sample a batch of data
+  xb, yb = get_batch('train')
+
+  # evaluate the loss
+  logits, loss = m(xb, yb)
+
+  # resets gradients of optimized tensors.
+  # set_to_none resest to None instead of 0,
+  # which can save memory and improve perf
+  # we reset the gradients because PyTorch accumulates the previous gradients by default
+  # see: https://stackoverflow.com/questions/48001598/why-do-we-need-to-call-zero-grad-in-pytorch
+  optimizer.zero_grad(set_to_none=True)
+  # get the gradients of all the params
+  loss.backward()
+  # use the gradients to update the params
+  optimizer.step()
+```
+
+```python
+print(loss.item())
+
+print(
+    decode(
+      m.generate(
+          idx = torch.zeros((1, 1), dtype=torch.long),
+          max_new_tokens=100)[0].tolist() # returns a 1 * 100 array, get the first (and only) row
+    ))
+```
+
+The loss has gone down and the output is starting to resemble the training data (still gibberish though):
+
+```text
+
+NG t h,
+Fize yonout eit r thom t, ch ar t g
+I LOfarsmalle thenierd p ourry, be horar OLI'd TII thith
+```
