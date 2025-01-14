@@ -5,16 +5,16 @@ from torch.nn import functional as F
 # This version adds a simple linear layer to the bigram implementation
 
 # hyperparameters
-batch_size = 32  # How many independent sequences will we process in parallel?
-block_size = 8  # what is the maximum content length for predictions?
+batch_size = 64  # How many independent sequences will we process in parallel?
+block_size = 256  # what is the maximum content length for predictions?
 max_iters = 5000
-eval_interval = 300
-learning_rate = 1e-3 # user lower learning rate cause the self-attention doesn't tolerate very high learning rates
+eval_interval = 500
+learning_rate = 3e-4 # user lower learning rate cause the self-attention doesn't tolerate very high learning rates
 device = "cuda" if torch.cuda.is_available() else "cpu"
 print(f"Using device: {device}")
 eval_iters = 200
-n_embed = 32 # size of embedding vector for each item in our vocab
-n_head = 4 # number of heads in the multi-head attention
+n_embed = 384 # size of embedding vector for each item in our vocab
+n_head = 6 # number of heads in the multi-head attention
 n_layers = 6 # number of self-attention->feedforward blocks in the model
 dropout = 0.2 # dropout rate for regularization, to prevent overfitting (randomly drops out some neurons during training). See: https://dl.acm.org/doi/pdf/10.5555/2627435.2670313
 # --------------
