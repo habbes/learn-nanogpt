@@ -156,7 +156,7 @@ class FeedForward(nn.Module):
         self.net = nn.Sequential(
             nn.Linear(n_embed, 4 * n_embed), # in the paper, the feedfoward layer is 4 times the size of the embedding dimension
             nn.ReLU(),
-            nn.Linear(4 * n_embed, n_embed) # add a projection layer that will go back into the residual pathway. Why?
+            nn.Linear(4 * n_embed, n_embed), # add a projection layer that will go back into the residual pathway. Why?
             # Add dropout before the residual connection (This was done to help scale the neural net, avoid overfitting?)
             nn.Dropout(dropout)
         )
