@@ -14,6 +14,9 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 print(f"Using device: {device}")
 eval_iters = 200
 n_embed = 32 # size of embedding vector for each item in our vocab
+n_head = 4 # number of heads in the multi-head attention
+n_layers = 6 # number of self-attention->feedforward blocks in the model
+dropout = 0.2 # dropout rate for regularization, to prevent overfitting (randomly drops out some neurons during training). See: https://dl.acm.org/doi/pdf/10.5555/2627435.2670313
 # --------------
 
 torch.manual_seed(1337)
@@ -100,6 +103,9 @@ class SelfAttentionHead(nn.Module):
         # the tril is a lower triangular matrix of ones
         # used to mask away the future tokens in the self-attention mechanism
         self.register_buffer('tril', torch.tril(torch.ones(block_size, block_size)))
+
+        # Added dropout when scaling to avoid overfitting?
+        self.dropout = nn.Dropout(dropout)
     
     def forward(self, x):
         B, T, C = x.shape
@@ -116,6 +122,8 @@ class SelfAttentionHead(nn.Module):
         wei = wei.masked_fill(self.tril[:T, :T] == 0, float('-inf')) # (B, T, T)
         wei = F.softmax(wei, dim=-1) # (B, T, T)
 
+        wei = self.dropout(wei)
+
         # apply the attention scores to the value vectors to get the weighted sum of values
         v = self.value(x) # (B, T, head_size)
         out = wei @ v # (B, T, T) @ (B, T, head_size) = (B, T, head_size)
@@ -128,12 +136,15 @@ class MultiHeadAttention(nn.Module):
         super().__init__()
         self.heads = nn.ModuleList([SelfAttentionHead(head_size) for _ in range(num_heads)])
         self.proj = nn.Linear(n_embed, n_embed) # Add projection layer that will go back into the residual pathway. Why?
+        # Added dropout when scaling to avoid overfitting?
+        self.dropout = nn.Dropout(dropout)
 
     def forward(self, x):
         # apply each head to the input in parallel
         # concatenate them over the channel dimension
         out = torch.cat([h(x) for h in self.heads], dim=-1) # (B, T, head_size * num_heads)
         out = self.proj(out)
+        out = self.dropout(out)
         return out
     
 
@@ -146,6 +157,8 @@ class FeedForward(nn.Module):
             nn.Linear(n_embed, 4 * n_embed), # in the paper, the feedfoward layer is 4 times the size of the embedding dimension
             nn.ReLU(),
             nn.Linear(4 * n_embed, n_embed) # add a projection layer that will go back into the residual pathway. Why?
+            # Add dropout before the residual connection (This was done to help scale the neural net, avoid overfitting?)
+            nn.Dropout(dropout)
         )
 
     def forward(self, x):
@@ -167,6 +180,14 @@ class Block(nn.Module):
         # add a simple feedforward layer to the model to give the nodes to process what they've learned
         # from each other before computing the logits or the next step
         self.ffwd = FeedForward(n_embed)
+        # The paper uses layer normalization, this helps reduce the training time
+        # layer norm is like batch norm, but normalizes rows instead of columns
+        # layer norm is described in this paper https://arxiv.org/pdf/1607.06450
+        # In the video, he explains it more using the BatchNorm implementation
+        # from his previous series: https://youtu.be/kCc8FmEb1nY?feature=shared&t=5571
+        # We'll apply layer norm before the self-attention and feedforward layers
+        self.ln1 = nn.LayerNorm(n_embed)
+        self.ln2 = nn.LayerNorm(n_embed)
     
     def forward(self, x):
         # Since we're now adding multiple blocks into the overal model,
@@ -179,12 +200,15 @@ class Block(nn.Module):
         # And "Understanding ResNet architecture": https://medium.com/@ibtedaazeem/understanding-resnet-architecture-a-deep-dive-into-residual-neural-network-2c792e6537a9
         # Addition is used because it distributes the gradients evenly to both paths during back progagation.
 
-        x = x + self.sa(x)
+        # apply layer normalization before the self-attention head
+        # this is a deviation from the original paper, which applied layer norm after,
+        # but it's common practice today. It's called pre-norm.
+        x = x + self.sa(self.ln1(x))
          # the feedforward layer processes the output of the self-attention head
         # on a token-by-token basis. All the tokens do this independently.
         # The self-attention is the communication to gather the data, then now the tokens have to "think"
         # about that data individually.
-        x = x + self.ffwd(x)
+        x = x + self.ffwd(self.ln2(x))
         return x
 
 # super simple bigram model
@@ -199,11 +223,11 @@ class BigramLanguageModel(nn.Module):
 
         # chain multiple blocks of self-attention and feedforward layers
         # to intersperse communication and computation
-        self.blocks = nn.Sequential(
-            Block(n_embed, n_head=4),
-            Block(n_embed, n_head=4),
-            Block(n_embed, n_head=4)
-        )
+        self.blocks = nn.Sequential(*[Block(n_embed, n_head=n_head) for _ in range(n_layers)])
+        
+        # There's also usually a layer norm after the last block,
+        # but before the final linear layer that feeds into the vocabulary
+        self.ln_f = nn.LayerNorm(n_embed) # final layer norm
         # linear layer to convert embeddings into logits, i.e. likelihoods of each character in the vocab to be the next character
         self.lm_head = nn.Linear(n_embed, vocab_size) # lm -> language model
 
