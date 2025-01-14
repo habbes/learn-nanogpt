@@ -1,7 +1,10 @@
 # learn-nanogpt
 Learning GPT and LLM from the "**Let's build GPT: from scratch, in code, spelled out.**" lecture by Andrej Karpathy at (https://www.youtube.com/watch?v=kCc8FmEb1nY)
 
-Based on the paper [Attention Is All You Need](https://arxiv.org/pdf/1706.03762)
+Related papers:
+
+- [Attention Is All You Need](https://arxiv.org/pdf/1706.03762)
+- [Language Models are Few-Shot Learners](https://arxiv.org/pdf/2005.14165)
 
 [Google collab session](https://colab.research.google.com/drive/1yEnqLMmb1yaSdI3DGiG5UzGwjZTNwcMB#scrollTo=xG4iydQUnxun)
 
