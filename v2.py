@@ -179,6 +179,10 @@ class Block(nn.Module):
         # And "Understanding ResNet architecture": https://medium.com/@ibtedaazeem/understanding-resnet-architecture-a-deep-dive-into-residual-neural-network-2c792e6537a9
 
         x = x + self.sa(x)
+         # the feedforward layer processes the output of the self-attention head
+        # on a token-by-token basis. All the tokens do this independently.
+        # The self-attention is the communication to gather the data, then now the tokens have to "think"
+        # about that data individually.
         x = x + self.ffwd(x)
         return x
 
@@ -219,12 +223,7 @@ class BigramLanguageModel(nn.Module):
         # when we move forward and talk about attention
         x = token_embeddings + position_embeddings # (B, T, C)
         # feed the embeddings through the self-attention head
-        x = self.sa_heads(x) # (B, T, C)
-        # the feedforward layer processes the output of the self-attention head
-        # on a token-by-token basis. All the tokens do this independently.
-        # The self-attention is the communication to gather the data, then now the tokens have to "think"
-        # about that data individually.
-        x = self.ffwd(x) # (B, T, C)
+        x = self.blocks(x) # (B, T, C)
         logits = self.lm_head(x) # (B, T, vocab_size)
 
         if targets is None:
