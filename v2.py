@@ -177,6 +177,7 @@ class Block(nn.Module):
         # computation that is added back to the input before the next step.
         # See "Deep Residual Learnin for Image Recognition, 2015": https://arxiv.org/pdf/1512.03385
         # And "Understanding ResNet architecture": https://medium.com/@ibtedaazeem/understanding-resnet-architecture-a-deep-dive-into-residual-neural-network-2c792e6537a9
+        # Addition is used because it distributes the gradients evenly to both paths during back progagation.
 
         x = x + self.sa(x)
          # the feedforward layer processes the output of the self-attention head
