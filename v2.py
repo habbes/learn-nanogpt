@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
+import time
 
 # This version adds a simple linear layer to the bigram implementation
 
@@ -304,6 +305,8 @@ m = model.to(device)
 # create PyTorch optimizer
 optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
 
+print("Starting training")
+start_time = time.time()
 for iter in range(max_iters):
     # every once in a while evaluate the loss on trian and val sets
     if iter % eval_interval == 0:
@@ -321,6 +324,8 @@ for iter in range(max_iters):
     loss.backward()
     optimizer.step()
 
+
+print(f"Training took {time.time() - start_time:.0f} seconds")
 # generate from the model
 context = torch.zeros((1, 1), dtype=torch.long, device=device)
 print(decode(m.generate(context, max_new_tokens=500)[0].tolist()))
